@@ -85,13 +85,5 @@ empty, sovereign box.
   # Postgres KB: external, adaptive
 ```
 
-## Not the model: `sean-data-vault`
-
-The operator's existing `sean-data-vault` is an unstructured PII dump and is
-**off-limits** — never read, cloned, or searched by any agent. This repo is its
-disciplined opposite: schema'd, scoped, boundary-enforced, and blueprint-only.
-
----
-
 Design rationale and the full decision log (D1–D7) live in
 `safe-app-store/docs/design/safe-app-installer.md`.
