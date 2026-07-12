@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# THE SAFETY GUARANTEE (D7): this repo is a BLUEPRINT, never DATA.
+# Nothing populated may ever be committed. If any of these ever appear in
+# `git status`, something is wrong — stop and investigate before committing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The crypto linchpin — the Fernet key that makes vault.db meaningful.
+# If this is ever committed, every secret it protects is compromised.
+*.key
+vault.key
+
+# Every populated database (the box's data lives here, never in git).
+*.db
+*.sqlite
+*.sqlite3
+*-journal
+*.db-wal
+*.db-shm
+
+# A provisioned box, wherever it lands.
+/box/
+box/
+/run/
+WILLOW_HOME/
+.willow/
+
+# Populated runtime state (structure is bootstrapped, contents stay local).
+config/settings.global.json
+config/*.local.json
+mcp_apps/*/secrets*
+ledgers/
+seeds/*.signed*
+
+# Secrets / env in any form.
+.env
+.env.*
+*.pem
+*.asc
+*.gpg
+secrets/
+**/secrets/
+
+# Postgres data directories, if a local PG backs the KB.
+pgdata/
+*/pgdata/
+
+# Python noise
+__pycache__/
+*.pyc
+.venv/
+venv/
