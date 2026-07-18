@@ -73,10 +73,22 @@ apply kart.db        04_tasks.sqlite.sql
 # first) on first use. We never write vault.db without a key, which is exactly
 # the half-state willow-mcp fails closed on.
 KEY="$BOX/vault.key"
+# Pass the path in the environment, never interpolated into the -c string: a box
+# path containing a quote would otherwise break out of the Python literal (shell
+# -> Python injection). Create it with os.open(..., 0o600) so it is 0600 from
+# birth — no open()+chmod window where the crypto root is world-readable.
 if [ -f "$KEY" ]; then
   echo "    vault.key already present — left untouched"
-elif python3 -c "from cryptography.fernet import Fernet; open('$KEY','wb').write(Fernet.generate_key())" 2>/dev/null; then
-  chmod 600 "$KEY"
+elif WILLOW_VAULT_KEY_PATH="$KEY" python3 -c '
+import os
+from cryptography.fernet import Fernet
+fd = os.open(os.environ["WILLOW_VAULT_KEY_PATH"],
+             os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+try:
+    os.write(fd, Fernet.generate_key())
+finally:
+    os.close(fd)
+' 2>/dev/null; then
   echo "    generated vault.key (0600) — the crypto root; NEVER commit or copy it"
 else
   echo "    note: could not generate vault.key here (cryptography unavailable);"
