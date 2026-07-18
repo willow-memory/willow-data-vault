@@ -10,13 +10,30 @@
 #
 # What it does (idempotent):
 #   1. create the box directory layout
-#   2. apply the owned SQLite schemas (secrets, SOIL, receipts, Kart tasks)
+#   2. apply the owned SQLite schemas that are safe to pre-materialize, AT THE
+#      PATHS willow-mcp/kart resolve — box-root files, not a db/ subdir:
+#      receipts and Kart tasks. Two stores are deliberately NOT pre-created,
+#      because willow-mcp owns an invariant the code must establish itself:
+#        * secrets (vault.db) — created ONLY alongside vault.key, as an atomic
+#          pair. willow-mcp fails closed on a vault.db with no key, so this
+#          script never writes vault.db; the code creates the pair on first use.
+#        * SOIL — one SQLite db per collection (<box>/<collection>/store.db),
+#          created lazily on first write. 02_soil_records.sql is that per-
+#          collection reference shape, applied by the code, not here.
 #   3. generate the Fernet vault.key (0600) if absent — the crypto linchpin
 #   4. print the next steps (point WILLOW_HOME / WILLOW_STORE_ROOT at the box;
 #      run willow-mcp-init for the config/mcp_apps/personas structure)
 #
 # It does NOT: create the Postgres KB (adaptive — see schema/05_knowledge.reference.sql),
 # populate any data, or install apps. Blueprint stands up the box; nothing more.
+#
+# Paths match willow-mcp's runtime resolution exactly (verified against the code):
+#   secrets  vault.py        -> $WILLOW_HOME/vault.db
+#   receipts receipts.py     -> $WILLOW_HOME/mcp_receipt.db
+#   kart     task_queue.py   -> $WILLOW_STORE_ROOT/kart.db      (SQLite fallback)
+#   SOIL     db.py (Store)   -> $WILLOW_STORE_ROOT/<collection>/store.db  (lazy)
+# With WILLOW_HOME == WILLOW_STORE_ROOT == <box> (the documented setup), every
+# one of those lands inside the box.
 
 set -euo pipefail
 
@@ -25,7 +42,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SCHEMA="$HERE/schema"
 
 echo "==> provisioning willow data-vault box at: $BOX"
-mkdir -p "$BOX"/{db,config,mcp_apps,ledgers}
+mkdir -p "$BOX"/{config,mcp_apps,ledgers}
 chmod 700 "$BOX"
 
 # Apply a schema to a SQLite DB. Prefer the sqlite3 CLI; fall back to Python's
@@ -38,20 +55,23 @@ else
   _apply() { echo "    !! no sqlite3 CLI and no python3 — apply schema/*.sql yourself"; return 1; }
 fi
 
-apply() {  # apply <sqlite-db> <ddl-file>
-  local db="$BOX/db/$1" ddl="$SCHEMA/$2"
-  echo "    schema: $2 -> db/$1"
+apply() {  # apply <box-root-db-filename> <ddl-file>
+  local db="$BOX/$1" ddl="$SCHEMA/$2"
+  echo "    schema: $2 -> $1"
   _apply "$db" "$ddl" && chmod 600 "$db"
 }
 
-apply vault.db    01_secrets.sql
-apply soil.db     02_soil_records.sql
-apply receipts.db 03_receipts.sql
-apply kart.db     04_tasks.sqlite.sql
+# Box-root filenames, matching willow-mcp's resolution (see header). secrets
+# (vault.db) and SOIL are intentionally absent — the code creates those itself
+# to keep their invariants (vault.db+key pairing; SOIL per-collection).
+apply mcp_receipt.db 03_receipts.sql
+apply kart.db        04_tasks.sqlite.sql
 
 # The crypto linchpin: the Fernet key. Generated locally, 0600, never git.
-# Best-effort and NON-FATAL: if cryptography is missing or broken, willow-mcp's
-# Vault.init() creates the key on first run. Never abort provisioning over it.
+# Best-effort and NON-FATAL: if cryptography is missing or broken here, leave it
+# — willow-mcp's default_vault() creates vault.db and vault.key together (key
+# first) on first use. We never write vault.db without a key, which is exactly
+# the half-state willow-mcp fails closed on.
 KEY="$BOX/vault.key"
 if [ -f "$KEY" ]; then
   echo "    vault.key already present — left untouched"
@@ -67,9 +87,11 @@ cat <<EOF
 
 ==> box provisioned (empty). Next:
     export WILLOW_HOME="$BOX"
-    export WILLOW_STORE_ROOT="$BOX"     # Kart queue + stores resolve here
+    export WILLOW_STORE_ROOT="$BOX"     # Kart queue + per-collection SOIL resolve here
     willow-mcp-init                      # lays down config/mcp_apps/personas/skills
-    # Postgres KB is adaptive — see schema/05_knowledge.reference.sql
+
+    # SOIL collections appear lazily as <box>/<collection>/store.db on first write.
+    # Postgres KB + tasks are adaptive — see schema/05_knowledge.reference.sql.
 
     This box holds data and the key. It must NEVER be committed to any repo.
 EOF
