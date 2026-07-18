@@ -43,7 +43,7 @@ can't carry it out" from a policy promise into a cryptographic one.
 ```
 schema/
   01_secrets.sql             # Fernet secret store (SQLite)   — owned, verbatim
-  02_soil_records.sql        # SOIL key/value store (SQLite)  — owned, verbatim
+  02_soil_records.sql        # SOIL store (SQLite) — owned; per-collection, applied lazily
   03_receipts.sql            # tool-call ledger (SQLite)      — owned, verbatim
   04_tasks.sqlite.sql        # Kart task queue (SQLite)       — owned, verbatim
   04_tasks.postgres.sql      # Kart task queue (Postgres)     — owned, verbatim
@@ -52,8 +52,14 @@ bootstrap/
   provision.sh               # stand up an empty box from the schemas
 ```
 
-The four SQLite/Postgres task schemas are **owned** by willow/Kart and copied
-verbatim from `willow-mcp` and `kartikeya`. The knowledge base is **not owned**:
+The SQLite/Postgres store schemas are **owned** by willow/Kart and copied
+verbatim from `willow-mcp` and `kartikeya`. `provision.sh` materializes the two
+that are safe to pre-create (receipts, Kart-SQLite) at the box root. The other
+two are created by willow-mcp itself, to preserve an invariant the code owns:
+`01_secrets.sql` (vault.db) is only ever written **alongside** `vault.key` as an
+atomic pair — willow-mcp fails closed on a keyless vault — and
+`02_soil_records.sql` is the per-collection SOIL shape, applied the first time a
+collection is written. The knowledge base is **not owned**:
 willow adapts to whatever `knowledge` table already exists (columns resolved at
 runtime by `schema_profile.py`), so `05_knowledge.reference.sql` is a reference
 for a fresh box only — never assume its shape against an existing KB.
@@ -77,13 +83,19 @@ empty, sovereign box.
 ```
 <box>/                       # 0700
   vault.db   vault.key       # secrets + Fernet key (0600)
-  db/
-    soil.db  receipts.db  kart.db
+  mcp_receipt.db             # tool-call receipts — the audit trail, stays in the box
+  kart.db                    # Kart task queue (SQLite fallback; Postgres used if present)
+  <collection>/store.db      # SOIL store — one dir per collection, created lazily on first write
   config/                    # settings.global.json (consent), roster, specialists
   mcp_apps/<app_id>/         # per-app ACL manifests
   ledgers/                   # willow-gate PGP check-in ledger
-  # Postgres KB: external, adaptive
+  # Postgres KB + tasks: external, adaptive
 ```
+
+These filenames and locations are exactly where willow-mcp resolves each store
+at runtime (`vault.py`, `receipts.py`, `db.py`, `task_queue.py`) with
+`WILLOW_HOME == WILLOW_STORE_ROOT == <box>`. There is no `db/` subdirectory: the
+stores live at the box root, and SOIL is per-collection, not a single file.
 
 Design rationale and the full decision log (D1–D7) live in
 `safe-app-store/docs/design/safe-app-installer.md`.
