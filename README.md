@@ -44,13 +44,40 @@ can't carry it out" from a policy promise into a cryptographic one.
 schema/
   01_secrets.sql             # Fernet secret store (SQLite)   — owned, verbatim
   02_soil_records.sql        # SOIL store (SQLite) — owned; per-collection, applied lazily
-  03_receipts.sql            # tool-call ledger (SQLite)      — owned, verbatim
+  03_receipts.sql            # tool-call ledger (SQLite)      — owned + tamper-evidence
   04_tasks.sqlite.sql        # Kart task queue (SQLite)       — owned, verbatim
   04_tasks.postgres.sql      # Kart task queue (Postgres)     — owned, verbatim
   05_knowledge.reference.sql # KB (Postgres) — REFERENCE ONLY, willow ADAPTS
 bootstrap/
   provision.sh               # stand up an empty box from the schemas
+  verify_receipts.py         # walk the receipts hash chain; a broken chain refuses
 ```
+
+### Receipts hash chain (tamper-evidence)
+
+`03_receipts.sql`'s base five columns (`id, ts, app_id, tool, outcome, detail`)
+are owned, verbatim, from willow-mcp `receipts.py`. Two more —
+`prev_hash, hash` — are this repo's give-back: a hash chain over the row
+stream, pattern-ported from Nestor's hash-chained ledger
+(`nestor/ledger.py`, Apache-2.0, `github.com/rudi193-cmd/Nestor`, pinned
+`v0.2.0`). Editing a past row breaks the next row's `prev_hash` on re-hash —
+`bootstrap/verify_receipts.py` is the verifier, and `provision.sh` runs it
+after applying the receipts schema, so a broken chain **refuses to
+provision** (nonzero exit) instead of silently continuing. Run
+`bootstrap/verify_receipts.py --self-test` to see the guard build a clean
+chain, verify it, tamper a row, and confirm that IS refused.
+
+This is schema-only: the columns are `NOT NULL`, so willow-mcp's
+`receipts.py` insert path has to compute and supply them for every new row —
+that writer-side patch lives in willow-mcp, out of scope here. A box
+provisioned before this change has a receipts table without these columns;
+`verify_receipts.py` reports that state explicitly (exit 2) rather than
+mistaking "never chained" for "tampered" (exit 1). See `03_receipts.sql`'s
+header for the exact canonical row form the hash is computed over.
+
+Covenant: this chain adds tamper-*evidence* to the receipts trail. It seals
+nothing and grants no authority — a clean chain says the rows were not
+altered after being written, not that anything in them was approved.
 
 The SQLite/Postgres store schemas are **owned** by willow/Kart and copied
 verbatim from `willow-mcp` and `kartikeya`. `provision.sh` materializes the two
