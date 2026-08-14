@@ -67,6 +67,16 @@ apply() {  # apply <box-root-db-filename> <ddl-file>
 apply mcp_receipt.db 03_receipts.sql
 apply kart.db        04_tasks.sqlite.sql
 
+# Tamper-evidence gate: verify the receipts hash chain (schema/03_receipts.sql's
+# prev_hash/hash columns; see that file's header and bootstrap/verify_receipts.py
+# for the chain rules — a pattern port of nestor/ledger.py). On a fresh box the
+# table is empty and this is a no-op pass. On a re-run against an existing,
+# already-populated box, a broken chain here REFUSES to continue provisioning
+# (set -e propagates the nonzero exit) rather than silently standing up
+# alongside a compromised audit trail.
+echo "    verifying receipts hash chain (tamper-evidence)..."
+python3 "$HERE/bootstrap/verify_receipts.py" "$BOX/mcp_receipt.db"
+
 # The crypto linchpin: the Fernet key. Generated locally, 0600, never git.
 # Best-effort and NON-FATAL: if cryptography is missing or broken here, leave it
 # — willow-mcp's default_vault() creates vault.db and vault.key together (key
