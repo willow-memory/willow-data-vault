@@ -102,8 +102,9 @@ willow-mcp-init                          # config/, mcp_apps/, personas/, skills
 
 `willow-mcp-init` already lays down the `WILLOW_HOME` structure (config, ACL
 manifests, personas, skills, seeds, gate ledger dirs); this blueprint adds the
-data schemas and the key underneath it. Together they stand up a complete,
-empty, sovereign box.
+data schemas and the key underneath it, and pre-creates the common runtime roots
+(`gate/`, `secrets/`, `constitutional/`, `ledgers/entries/`). Together they
+stand up a complete, empty, sovereign box.
 
 ## The box layout (never in git)
 
@@ -115,7 +116,10 @@ empty, sovereign box.
   <collection>/store.db      # SOIL store — one dir per collection, created lazily on first write
   config/                    # settings.global.json (consent), roster, specialists
   mcp_apps/<app_id>/         # per-app ACL manifests
-  ledgers/                   # willow-gate PGP check-in ledger
+  ledgers/entries/           # ledger entry roots (check-in, attest, envelopes)
+  gate/secrets/              # gate runtime files
+  secrets/                   # local credential material (operator-managed)
+  constitutional/            # local envelope registry home (pre-approved.json)
   # Postgres KB + tasks: external, adaptive
 ```
 
