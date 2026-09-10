@@ -42,7 +42,10 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 SCHEMA="$HERE/schema"
 
 echo "==> provisioning willow data-vault box at: $BOX"
-mkdir -p "$BOX"/{config,mcp_apps,ledgers}
+# Core runtime roots used across willow-mcp + gate flows.
+mkdir -p "$BOX"/{config,mcp_apps,ledgers,gate,secrets,constitutional}
+# Keep nested roots explicit so an empty tree still has the expected shape.
+mkdir -p "$BOX"/ledgers/entries "$BOX"/gate/secrets
 chmod 700 "$BOX"
 
 # Apply a schema to a SQLite DB. Prefer the sqlite3 CLI; fall back to Python's
