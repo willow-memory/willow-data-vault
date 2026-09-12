@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Keep the workflow actions current. The sqlfluff pin in tests.yml is a bare
+  # `pip install "sqlfluff==x.y.z"` with no requirements file, so it is bumped
+  # by hand (CONTRIBUTING.md names the pin).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
