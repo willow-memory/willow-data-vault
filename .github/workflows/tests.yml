@@ -1,0 +1,115 @@
+name: Tests
+
+# Fleet plan decision 10: willow-data-vault gets CI that runs what exists
+# (bootstrap/verify_receipts.py, a schema lint) and nothing new. Linux only:
+# there is no package to build, and the box only ever runs on Linux.
+#
+# CONTRIBUTING.md lists the exact commands each leg runs so a human can run
+# them locally. tests/test_ci_wiring.py asserts the schema lists below match
+# the files on disk, so a schema added without a lint entry fails the build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # The seven schemas, partitioned by dialect. Keep each list on one line:
+  # tests/test_ci_wiring.py reads these two lines back.
+  SQLITE_SCHEMAS: schema/01_secrets.sql schema/02_soil_records.sql schema/03_receipts.sql schema/04_tasks.sqlite.sql schema/06_intake.sql
+  POSTGRES_SCHEMAS: schema/04_tasks.postgres.sql schema/05_knowledge.reference.sql
+
+jobs:
+  provision:
+    name: provision + verify receipts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # provision.sh applies the schemas in the order it already fixes:
+      # 03_receipts.sql -> mcp_receipt.db, then 04_tasks.sqlite.sql -> kart.db,
+      # then runs verify_receipts.py against the fresh receipts db. The
+      # cryptography package is not installed here, so the vault.key step takes
+      # its documented non-fatal branch (willow-mcp creates the key on first use).
+      - name: Provision an empty box (bootstrap/provision.sh)
+        run: bootstrap/provision.sh "$RUNNER_TEMP/box"
+
+      - name: Walk the receipts chain on the fresh box
+        run: python3 bootstrap/verify_receipts.py "$RUNNER_TEMP/box/mcp_receipt.db"
+
+      - name: verify_receipts.py self-test (clean chain verifies, tampered row is refused)
+        run: python3 bootstrap/verify_receipts.py --self-test
+
+      # vault_intake.py applies 06_intake.sql itself (connect() -> executescript);
+      # its self-test is the existing path that exercises that schema.
+      - name: vault_intake.py self-test (applies 06_intake.sql)
+        run: python3 bootstrap/vault_intake.py --self-test
+
+      # 01_secrets.sql and 02_soil_records.sql are deliberately NOT applied by
+      # provision.sh (willow-mcp creates vault.db only alongside vault.key, and
+      # SOIL per collection on first write). Apply them to throwaway databases
+      # here only to prove the DDL executes on SQLite; nothing is kept.
+      - name: Apply the code-owned SQLite schemas to throwaway databases
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/scratch"
+          sqlite3 "$RUNNER_TEMP/scratch/vault.db" < schema/01_secrets.sql
+          sqlite3 "$RUNNER_TEMP/scratch/store.db" < schema/02_soil_records.sql
+          sqlite3 "$RUNNER_TEMP/scratch/vault.db" ".tables"
+          sqlite3 "$RUNNER_TEMP/scratch/store.db" ".tables"
+
+      # The D7 guarantee: provisioning writes nothing into the repo, and no
+      # database or key can ever show up as trackable.
+      - name: Repo tree untouched by provisioning
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+  sql-lint:
+    name: SQL lint (sqlfluff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install sqlfluff (pinned)
+        run: pip install "sqlfluff==4.3.0"
+      # Rule exclusions and the reason for each live in .sqlfluff.
+      - name: Lint the SQLite schemas
+        run: sqlfluff lint --dialect sqlite $SQLITE_SCHEMAS
+      - name: Lint the Postgres schemas
+        run: sqlfluff lint --dialect postgres $POSTGRES_SCHEMAS
+
+  wiring:
+    name: CI wiring (unittest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Workflow schema list equals schema/*.sql on disk
+        run: python3 -m unittest discover -s tests -v
+
+  # The one required check: fails on any leg that did not succeed, including
+  # a skipped or cancelled one.
+  test:
+    name: test
+    needs: [provision, sql-lint, wiring]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every leg succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS"
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null

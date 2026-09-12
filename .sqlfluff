@@ -1,0 +1,21 @@
+# sqlfluff config for the SQL lint CI runs over schema/*.sql (see CONTRIBUTING.md).
+#
+# The default dialect is sqlite; the two Postgres files are linted with
+# `--dialect postgres` on the command line (04_tasks.postgres.sql,
+# 05_knowledge.reference.sql). The lint is a syntax and semantics gate, not a
+# reformatter: every schema here is either extracted VERBATIM from an upstream
+# owner (willow-mcp, kartikeya) or column-aligned on purpose, and the schema
+# files are never rewritten to suit a linter. So:
+#
+#   layout  — the whole layout group (LT01 spacing, LT02 indent, LT05 line
+#             length, ...) is excluded; it only ever fires on the deliberate
+#             column alignment of the DDL.
+#   RF04    — "keywords should not be used as identifiers" fires on upstream's
+#             own column names (records.action, tasks.result, knowledge.content,
+#             knowledge.source). They are owned upstream; renaming them here
+#             would break the verbatim contract the README states.
+#
+# Everything else (parse errors, structure, references, conventions) stays on.
+[sqlfluff]
+dialect = sqlite
+exclude_rules = layout, RF04
