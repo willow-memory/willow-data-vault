@@ -37,9 +37,13 @@ Check the workflow's schema list against the files on disk (job `wiring`):
     python3 -m unittest discover -s tests -v
 
 The aggregate job `test` needs every leg and fails on any result other than
-`success`; it is the one check to require on `main`. `codeql.yml` analyzes the
-`actions` language only — there is no Python package here for CodeQL to
-analyze.
+`success`; it is the one check to require on `main`.
+
+CodeQL runs through GitHub's **default setup** on this repository (a repo
+setting, not a workflow file). GitHub refuses results from an advanced
+`codeql.yml` while default setup is enabled, so there is none here; the
+`actions` language — the only code surface worth scanning, since `bootstrap/`
+is two stdlib scripts and not a package — is enabled in that setting.
 
 ## What CI will not do
 
